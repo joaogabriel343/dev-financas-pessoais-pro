@@ -88,3 +88,37 @@ export async function updateTransaction(input: {
   if (error) throw error;
   return { ...data, amount: Number((data as any).amount) } as TransactionRow;
 }
+// Adicione esta função no final do arquivo src/lib/transactions.ts
+
+export async function createTransaction(input: {
+  type: TransactionType;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  description: string;
+  category_id: number;
+  account_id: number;
+  user_id: string; // Precisamos do ID do usuário logado
+}) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .insert([
+      {
+        type: input.type,
+        amount: input.amount,
+        date: input.date,
+        description: input.description,
+        category_id: input.category_id,
+        account_id: input.account_id,
+        user_id: input.user_id,
+      },
+    ])
+    .select()
+    .single(); // .select().single() retorna o registro que acabamos de criar
+
+  if (error) {
+    console.error('Supabase error:', error);
+    throw error;
+  }
+
+  return data;
+}
