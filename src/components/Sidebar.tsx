@@ -10,6 +10,7 @@ import {
   Target,
   PieChart,
   BarChart3,
+  FileDown,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -23,6 +24,7 @@ const navItems = [
   { to: "/metas", icon: Target, label: "Metas" },
   { to: "/orcamentos", icon: PieChart, label: "Orçamentos" },
   { to: "/relatorios", icon: BarChart3, label: "Relatórios" },
+  { to: "/exportar", icon: FileDown, label: "Exportar Dados" },
   { to: "/perfil", icon: Settings, label: "Configurações" },
 ];
 
