@@ -4,30 +4,72 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { mockBudgets, mockCategories } from "@/data/mockData";
 import { Plus, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { listBudgets, startOfMonthISO, upsertBudget, type BudgetWithCategory } from "../lib/budgets";
+import { listCategories, type Category } from "../lib/categorias";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Budgets = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({
     categoryId: '',
     limit: '',
   });
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [budgets, setBudgets] = useState<BudgetWithCategory[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const expenseCategories = mockCategories.filter(c => c.type === 'expense');
+  const month = useMemo(() => startOfMonthISO(new Date()), []);
 
-  const handleSubmit = () => {
-    toast({
-      title: "Orçamento definido!",
-      description: "O limite de gastos foi configurado com sucesso.",
-    });
-    setFormData({ categoryId: '', limit: '' });
-    setOpen(false);
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      try {
+        setLoading(true);
+        const [cats, buds] = await Promise.all([
+          listCategories(user.id),
+          listBudgets(user.id, month),
+        ]);
+        setCategories(cats.filter(c => c.type === 'expense'));
+        setBudgets(buds);
+      } catch (err: any) {
+        toast({ title: 'Erro ao carregar', description: err.message ?? 'Não foi possível carregar orçamentos', variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id, month]);
+
+  const expenseCategories = categories;
+
+  const handleSubmit = async () => {
+    try {
+      if (!user?.id) throw new Error('Usuário não autenticado');
+      if (!formData.categoryId || !formData.limit) {
+        toast({ title: 'Campos obrigatórios', description: 'Selecione categoria e informe o limite.', variant: 'destructive' });
+        return;
+      }
+      const res = await upsertBudget({
+        user_id: user.id,
+        category_id: Number(formData.categoryId),
+        month,
+        limit_amount: Number(formData.limit),
+      });
+      const updated = await listBudgets(user.id, month);
+      setBudgets(updated);
+      toast({ title: 'Orçamento definido!', description: 'O limite de gastos foi configurado com sucesso.' });
+      setFormData({ categoryId: '', limit: '' });
+      setOpen(false);
+    } catch (err: any) {
+      toast({ title: 'Erro ao salvar', description: err.message ?? 'Não foi possível salvar orçamento', variant: 'destructive' });
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -68,7 +110,7 @@ const Budgets = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {expenseCategories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
+                        <SelectItem key={category.id} value={String(category.id)}>
                           {category.name}
                         </SelectItem>
                       ))}
@@ -99,9 +141,10 @@ const Budgets = () => {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {mockBudgets.map((budget) => {
-            const category = mockCategories.find(c => c.id === budget.categoryId);
-            const percentage = (budget.spent / budget.limit) * 100;
+          {loading && <p className="text-sm text-muted-foreground">Carregando...</p>}
+          {!loading && budgets.map((budget) => {
+            const categoryName = budget.category_name;
+            const percentage = (Number(budget.spent) / Number(budget.limit_amount)) * 100;
             const isOverBudget = percentage > 100;
             const isWarning = percentage > 80 && percentage <= 100;
 
@@ -111,7 +154,7 @@ const Budgets = () => {
               }`}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{category?.name}</CardTitle>
+                    <CardTitle className="text-lg">{categoryName}</CardTitle>
                     {(isOverBudget || isWarning) && (
                       <AlertCircle className={`h-5 w-5 ${isOverBudget ? 'text-destructive' : 'text-warning'}`} />
                     )}
@@ -133,16 +176,16 @@ const Budgets = () => {
                   <div className="space-y-1">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Gasto</span>
-                      <span className="font-semibold">{formatCurrency(budget.spent)}</span>
+                      <span className="font-semibold">{formatCurrency(Number(budget.spent))}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Limite</span>
-                      <span className="font-semibold">{formatCurrency(budget.limit)}</span>
+                      <span className="font-semibold">{formatCurrency(Number(budget.limit_amount))}</span>
                     </div>
                     <div className="flex justify-between text-sm pt-2 border-t">
                       <span className="text-muted-foreground">Disponível</span>
                       <span className={`font-semibold ${isOverBudget ? 'text-destructive' : 'text-success'}`}>
-                        {formatCurrency(Math.max(0, budget.limit - budget.spent))}
+                        {formatCurrency(Math.max(0, Number(budget.limit_amount) - Number(budget.spent)))}
                       </span>
                     </div>
                   </div>
