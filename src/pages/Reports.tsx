@@ -1,40 +1,59 @@
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockTransactions, mockCategories } from "@/data/mockData";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, Calendar } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { listTransactions, type TransactionWithNames } from "../lib/transactions";
 
 const Reports = () => {
+  const { user } = useAuth();
+  const [transactions, setTransactions] = useState<TransactionWithNames[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      try {
+        setLoading(true);
+        const data = await listTransactions(user.id);
+        setTransactions(data);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id]);
+
   const monthlyData = useMemo(() => {
     const data: Record<string, { income: number; expenses: number }> = {};
     
-    mockTransactions.forEach(t => {
+    transactions.forEach(t => {
       const month = t.date.substring(0, 7);
       if (!data[month]) {
         data[month] = { income: 0, expenses: 0 };
       }
       if (t.type === 'income') {
-        data[month].income += t.amount;
+        data[month].income += Number(t.amount);
       } else {
-        data[month].expenses += t.amount;
+        data[month].expenses += Number(t.amount);
       }
     });
     
     return Object.entries(data).sort((a, b) => a[0].localeCompare(b[0]));
-  }, []);
+  }, [transactions]);
 
   const categoryTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     
-    mockTransactions.forEach(t => {
-      const category = mockCategories.find(c => c.id === t.categoryId);
-      if (category) {
-        totals[category.name] = (totals[category.name] || 0) + t.amount;
-      }
+    transactions.forEach(t => {
+      const catName = t.category_name || 'Sem categoria';
+      totals[catName] = (totals[catName] || 0) + Number(t.amount);
     });
     
     return Object.entries(totals).sort((a, b) => b[1] - a[1]);
-  }, []);
+  }, [transactions]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -137,15 +156,15 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               {(() => {
-                const maxIncome = mockTransactions
+                const maxIncome = transactions
                   .filter(t => t.type === 'income')
-                  .sort((a, b) => b.amount - a.amount)[0];
+                  .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
                 return (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <TrendingUp className="h-4 w-4 text-success" />
                       <span className="text-2xl font-bold text-success">
-                        {formatCurrency(maxIncome?.amount || 0)}
+                        {formatCurrency(Number(maxIncome?.amount) || 0)}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">{maxIncome?.description}</p>
@@ -163,15 +182,15 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               {(() => {
-                const maxExpense = mockTransactions
+                const maxExpense = transactions
                   .filter(t => t.type === 'expense')
-                  .sort((a, b) => b.amount - a.amount)[0];
+                  .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
                 return (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <TrendingDown className="h-4 w-4 text-destructive" />
                       <span className="text-2xl font-bold text-destructive">
-                        {formatCurrency(maxExpense?.amount || 0)}
+                        {formatCurrency(Number(maxExpense?.amount) || 0)}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">{maxExpense?.description}</p>
@@ -189,12 +208,14 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               {(() => {
-                const expenses = mockTransactions.filter(t => t.type === 'expense');
-                const avgExpense = expenses.reduce((sum, t) => sum + t.amount, 0) / expenses.length;
+                const expenses = transactions.filter(t => t.type === 'expense');
+                const avgExpense = expenses.length > 0 
+                  ? expenses.reduce((sum, t) => sum + Number(t.amount), 0) / expenses.length 
+                  : 0;
                 return (
                   <div className="space-y-1">
                     <span className="text-2xl font-bold">
-                      {formatCurrency(avgExpense || 0)}
+                      {formatCurrency(avgExpense)}
                     </span>
                     <p className="text-sm text-muted-foreground">por transação</p>
                   </div>
