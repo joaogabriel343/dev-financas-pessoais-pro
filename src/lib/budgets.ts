@@ -4,7 +4,7 @@ export interface BudgetRow {
   id: number;
   created_at: string;
   user_id: string;
-  category_id: number;
+  category_id: number; 
   month: string; // ISO date (YYYY-MM-DD)
   limit_amount: number;
   spent: number;

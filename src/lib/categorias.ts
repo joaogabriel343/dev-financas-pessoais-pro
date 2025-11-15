@@ -6,7 +6,7 @@ export interface Category {
   id: number;
   created_at: string;
   name: string;
-  type: CategoryType;
+  type: CategoryType; 
   user_id: string;
 }
 
