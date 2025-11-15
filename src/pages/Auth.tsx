@@ -5,57 +5,82 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign } from "lucide-react";
+import { DollarSign, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
+import { toast } from "sonner";
 
 const Auth = () => {
-  const { login, signup, isAuthenticated } = useAuth();
+  const { login, signup, isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   
   // Estados para Login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // Estados para Cadastro
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+  const [isSigningUp, setIsSigningUp] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !loading) {
       navigate("/");
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, loading, navigate]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!loginEmail || !loginPassword) {
+      toast.error("Preencha todos os campos");
       return;
     }
     
-    login(loginEmail, loginPassword);
+    setIsLoggingIn(true);
+    try {
+      await login(loginEmail, loginPassword);
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!signupName || !signupEmail || !signupPassword || !signupConfirmPassword) {
+      toast.error("Preencha todos os campos");
       return;
     }
     
     if (signupPassword !== signupConfirmPassword) {
+      toast.error("As senhas não coincidem");
       return;
     }
     
     if (signupPassword.length < 6) {
+      toast.error("A senha deve ter no mínimo 6 caracteres");
       return;
     }
     
-    signup(signupName, signupEmail, signupPassword);
+    setIsSigningUp(true);
+    try {
+      await signup(signupName, signupEmail, signupPassword);
+    } finally {
+      setIsSigningUp(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-secondary/10">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-secondary/10 p-4">
@@ -102,8 +127,15 @@ const Auth = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full">
-                  Entrar
+                <Button type="submit" className="w-full" disabled={isLoggingIn}>
+                  {isLoggingIn ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Entrando...
+                    </>
+                  ) : (
+                    "Entrar"
+                  )}
                 </Button>
               </form>
             </TabsContent>
@@ -156,8 +188,15 @@ const Auth = () => {
                     minLength={6}
                   />
                 </div>
-                <Button type="submit" className="w-full">
-                  Criar conta
+                <Button type="submit" className="w-full" disabled={isSigningUp}>
+                  {isSigningUp ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Criando conta...
+                    </>
+                  ) : (
+                    "Criar conta"
+                  )}
                 </Button>
               </form>
             </TabsContent>
