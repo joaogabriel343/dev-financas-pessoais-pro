@@ -14,6 +14,7 @@ import Accounts from "./pages/Accounts";
 import Goals from "./pages/Goals";
 import Budgets from "./pages/Budgets";
 import Reports from "./pages/Reports";
+import ExportReports from "./pages/ExportReports";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -38,6 +39,7 @@ const App = () => (
             <Route path="/metas" element={<ProtectedRoute><Goals /></ProtectedRoute>} />
             <Route path="/orcamentos" element={<ProtectedRoute><Budgets /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+            <Route path="/exportar" element={<ProtectedRoute><ExportReports /></ProtectedRoute>} />
             <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -1,52 +1,66 @@
 import { Layout } from "@/components/Layout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockTransactions, mockAccounts, mockCategories } from "@/data/mockData";
 import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { listAccounts, type AccountRow } from "../lib/accounts";
+import { listTransactions, type TransactionWithNames } from "../lib/transactions";
 
 const Dashboard = () => {
-  const stats = useMemo(() => {
-    const currentMonth = '2025-11';
-    const monthTransactions = mockTransactions.filter(t => t.date.startsWith(currentMonth));
-    
-    const income = monthTransactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-    
-    const expenses = monthTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
-    
-    const balance = mockAccounts.reduce((sum, acc) => sum + acc.balance, 0);
-    
-    return { income, expenses, balance };
+  const { user } = useAuth();
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [transactions, setTransactions] = useState<TransactionWithNames[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const currentMonthPrefix = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
   }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      try {
+        setLoading(true);
+        const [accs, txs] = await Promise.all([
+          listAccounts(user.id),
+          listTransactions(user.id),
+        ]);
+        setAccounts(accs);
+        setTransactions(txs);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id]);
+
+  const stats = useMemo(() => {
+    const monthTx = transactions.filter(t => t.date.startsWith(currentMonthPrefix));
+    const income = monthTx.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
+    const expenses = monthTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
+    const balance = accounts.reduce((sum, acc) => sum + Number(acc.balance), 0);
+    return { income, expenses, balance };
+  }, [transactions, accounts, currentMonthPrefix]);
 
   const expensesByCategory = useMemo(() => {
-    const currentMonth = '2025-11';
-    const monthTransactions = mockTransactions.filter(
-      t => t.type === 'expense' && t.date.startsWith(currentMonth)
-    );
-    
-    const categoryTotals = monthTransactions.reduce((acc, t) => {
-      const category = mockCategories.find(c => c.id === t.categoryId);
-      if (category) {
-        acc[category.name] = (acc[category.name] || 0) + t.amount;
-      }
+    const monthTx = transactions.filter(t => t.type === 'expense' && t.date.startsWith(currentMonthPrefix));
+    const totals = monthTx.reduce((acc, t) => {
+      const key = t.category_name || 'Sem categoria';
+      acc[key] = (acc[key] || 0) + Number(t.amount);
       return acc;
     }, {} as Record<string, number>);
-    
-    return Object.entries(categoryTotals)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-  }, []);
+    return Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [transactions, currentMonthPrefix]);
 
   const recentTransactions = useMemo(() => {
-    return [...mockTransactions]
+    return [...transactions]
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 5);
-  }, []);
+  }, [transactions]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -100,7 +114,7 @@ const Dashboard = () => {
             <CardContent>
               <div className="space-y-4">
                 {expensesByCategory.map(([category, amount]) => {
-                  const percentage = (amount / stats.expenses) * 100;
+                  const percentage = stats.expenses ? (amount / stats.expenses) * 100 : 0;
                   return (
                     <div key={category} className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
@@ -128,7 +142,6 @@ const Dashboard = () => {
             <CardContent>
               <div className="space-y-4">
                 {recentTransactions.map((transaction) => {
-                  const category = mockCategories.find(c => c.id === transaction.categoryId);
                   return (
                     <div key={transaction.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -143,13 +156,13 @@ const Dashboard = () => {
                         </div>
                         <div>
                           <p className="font-medium text-sm">{transaction.description}</p>
-                          <p className="text-xs text-muted-foreground">{category?.name}</p>
+                          <p className="text-xs text-muted-foreground">{transaction.category_name}</p>
                         </div>
                       </div>
                       <span className={`font-semibold ${
                         transaction.type === 'income' ? 'text-success' : 'text-destructive'
                       }`}>
-                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(Number(transaction.amount))}
                       </span>
                     </div>
                   );
@@ -166,13 +179,13 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
-              {mockAccounts.map((account) => (
+              {accounts.map((account) => (
                 <div key={account.id} className="rounded-lg border p-4 transition-all hover:shadow-md">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-muted-foreground">{account.name}</span>
                     <Wallet className="h-4 w-4 text-primary" />
                   </div>
-                  <p className="text-2xl font-bold">{formatCurrency(account.balance)}</p>
+                  <p className="text-2xl font-bold">{formatCurrency(Number(account.balance))}</p>
                 </div>
               ))}
             </div>

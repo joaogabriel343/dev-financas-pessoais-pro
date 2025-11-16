@@ -3,37 +3,66 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { mockCategories } from "@/data/mockData";
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { createCategory, deleteCategory, listCategories, type Category } from "@/lib/categorias";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Categories = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [newCategory, setNewCategory] = useState({ name: '', type: 'expense' as 'income' | 'expense' });
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const handleAdd = () => {
-    toast({
-      title: "Categoria criada!",
-      description: `A categoria "${newCategory.name}" foi adicionada com sucesso.`,
-    });
-    setNewCategory({ name: '', type: 'expense' });
-    setOpen(false);
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      try {
+        setLoading(true);
+        const data = await listCategories(user.id);
+        setCategories(data);
+      } catch (err: any) {
+        toast({ title: "Erro ao carregar", description: err.message ?? "Não foi possível carregar categorias", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id]);
+
+  const handleAdd = async () => {
+    if (!newCategory.name.trim()) {
+      toast({ title: "Nome obrigatório", description: "Informe um nome para a categoria.", variant: "destructive" });
+      return;
+    }
+    try {
+      if (!user?.id) throw new Error("Usuário não autenticado");
+      const created = await createCategory({ name: newCategory.name.trim(), type: newCategory.type, user_id: user.id });
+      setCategories((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      toast({ title: "Categoria criada!", description: `A categoria "${created.name}" foi adicionada com sucesso.` });
+      setNewCategory({ name: '', type: 'expense' });
+      setOpen(false);
+    } catch (err: any) {
+      toast({ title: "Erro ao criar", description: err.message ?? "Não foi possível criar a categoria", variant: "destructive" });
+    }
   };
 
-  const handleDelete = (id: string, name: string) => {
-    toast({
-      title: "Categoria excluída",
-      description: `A categoria "${name}" foi removida.`,
-      variant: "destructive",
-    });
+  const handleDelete = async (id: number, name: string) => {
+    try {
+      await deleteCategory(id);
+      setCategories((prev) => prev.filter((c) => c.id !== id));
+      toast({ title: "Categoria excluída", description: `A categoria "${name}" foi removida.` });
+    } catch (err: any) {
+      toast({ title: "Erro ao excluir", description: err.message ?? "Não foi possível excluir a categoria", variant: "destructive" });
+    }
   };
-
-  const incomeCategories = mockCategories.filter(c => c.type === 'income');
-  const expenseCategories = mockCategories.filter(c => c.type === 'expense');
+  const incomeCategories = useMemo(() => categories.filter(c => c.type === 'income'), [categories]);
+  const expenseCategories = useMemo(() => categories.filter(c => c.type === 'expense'), [categories]);
 
   return (
     <Layout>
@@ -94,7 +123,8 @@ const Categories = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {incomeCategories.map((category) => (
+                {loading && <p className="text-sm text-muted-foreground">Carregando...</p>}
+                {!loading && incomeCategories.map((category) => (
                   <div
                     key={category.id}
                     className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent"
@@ -120,7 +150,8 @@ const Categories = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {expenseCategories.map((category) => (
+                {loading && <p className="text-sm text-muted-foreground">Carregando...</p>}
+                {!loading && expenseCategories.map((category) => (
                   <div
                     key={category.id}
                     className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent"
