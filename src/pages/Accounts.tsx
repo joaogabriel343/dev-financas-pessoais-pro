@@ -3,23 +3,43 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { mockAccounts } from "@/data/mockData";
 import { Plus, Edit, Building2, Wallet, TrendingUp } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { listAccounts, createAccount, updateAccount, type AccountRow } from "../lib/accounts";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const Accounts = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [currentAccount, setCurrentAccount] = useState<any>(null);
+  const [currentAccount, setCurrentAccount] = useState<AccountRow | null>(null);
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     type: 'bank' as 'bank' | 'cash' | 'investment',
     balance: '',
   });
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      try {
+        setLoading(true);
+        const data = await listAccounts(user.id);
+        setAccounts(data);
+      } catch (err: any) {
+        toast({ title: 'Erro ao carregar', description: err.message ?? 'Não foi possível carregar contas', variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id]);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -39,22 +59,49 @@ const Accounts = () => {
     }
   };
 
-  const handleSubmit = () => {
-    toast({
-      title: editMode ? "Conta atualizada!" : "Conta criada!",
-      description: `A conta "${formData.name}" foi ${editMode ? 'atualizada' : 'adicionada'} com sucesso.`,
-    });
-    setFormData({ name: '', type: 'bank', balance: '' });
-    setOpen(false);
-    setEditMode(false);
+  const handleSubmit = async () => {
+    try {
+      if (!user?.id) throw new Error('Usuário não autenticado');
+      if (!formData.name || !formData.balance) {
+        toast({ title: 'Campos obrigatórios', description: 'Preencha nome e saldo.', variant: 'destructive' });
+        return;
+      }
+
+      if (editMode && currentAccount) {
+        const updated = await updateAccount({
+          id: currentAccount.id,
+          name: formData.name,
+          type: formData.type,
+          balance: Number(formData.balance),
+        });
+        setAccounts(prev => prev.map(a => a.id === updated.id ? updated : a));
+        toast({ title: 'Conta atualizada!', description: `A conta "${formData.name}" foi atualizada com sucesso.` });
+      } else {
+        const created = await createAccount({
+          user_id: user.id,
+          name: formData.name,
+          type: formData.type,
+          balance: Number(formData.balance),
+        });
+        setAccounts(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+        toast({ title: 'Conta criada!', description: `A conta "${formData.name}" foi adicionada com sucesso.` });
+      }
+
+      setFormData({ name: '', type: 'bank', balance: '' });
+      setOpen(false);
+      setEditMode(false);
+      setCurrentAccount(null);
+    } catch (err: any) {
+      toast({ title: 'Erro ao salvar', description: err.message ?? 'Não foi possível salvar a conta', variant: 'destructive' });
+    }
   };
 
-  const handleEdit = (account: any) => {
+  const handleEdit = (account: AccountRow) => {
     setCurrentAccount(account);
     setFormData({
       name: account.name,
       type: account.type,
-      balance: account.balance.toString(),
+      balance: String(account.balance),
     });
     setEditMode(true);
     setOpen(true);
@@ -136,7 +183,8 @@ const Accounts = () => {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockAccounts.map((account) => {
+          {loading && <p className="text-sm text-muted-foreground col-span-full text-center">Carregando...</p>}
+          {!loading && accounts.map((account) => {
             const Icon = getIcon(account.type);
             return (
               <Card key={account.id} className="transition-all hover:shadow-lg">
