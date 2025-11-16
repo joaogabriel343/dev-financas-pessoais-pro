@@ -4,14 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { mockGoals } from "@/data/mockData";
-import { Plus, Target } from "lucide-react";
-import { useState } from "react";
+import { Plus, Target, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { createGoal, deleteGoal, listGoals, type GoalRow } from "@/lib/goals";
+import { calculateGoalProgress, formatCurrency } from "@/utils/financeUtils";
 
 const Goals = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -19,21 +22,62 @@ const Goals = () => {
     currentAmount: '',
     deadline: '',
   });
+  const [goals, setGoals] = useState<GoalRow[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const handleSubmit = () => {
-    toast({
-      title: "Meta criada!",
-      description: `A meta "${formData.name}" foi adicionada com sucesso.`,
-    });
-    setFormData({ name: '', targetAmount: '', currentAmount: '', deadline: '' });
-    setOpen(false);
-  };
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      try {
+        setLoading(true);
+        const data = await listGoals(user.id);
+        setGoals(data);
+      } catch (err: any) {
+        toast({ title: "Erro ao carregar", description: err.message ?? "Não foi possível carregar metas", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
+  const handleSubmit = async () => {
+    if (!formData.name.trim()) {
+      toast({ title: "Nome obrigatório", description: "Informe um nome para a meta.", variant: "destructive" });
+      return;
+    }
+    if (!user?.id) {
+      toast({ title: "Usuário não autenticado", description: "Faça login para criar metas.", variant: "destructive" });
+      return;
+    }
+    const target = parseFloat((formData.targetAmount || '0').toString().replace(',', '.')) || 0;
+    const current = parseFloat((formData.currentAmount || '0').toString().replace(',', '.')) || 0;
+    if (target <= 0) {
+      toast({ title: "Valor alvo inválido", description: "O valor alvo deve ser maior que zero.", variant: "destructive" });
+      return;
+    }
+    if (current < 0) {
+      toast({ title: "Valor atual inválido", description: "O valor atual não pode ser negativo.", variant: "destructive" });
+      return;
+    }
+    try {
+      const created = await createGoal({
+        user_id: user.id,
+        name: formData.name.trim(),
+        target_amount: target,
+        current_amount: current,
+        deadline: formData.deadline || new Date().toISOString().split('T')[0],
+      });
+      setGoals((prev) => {
+        const next = [...prev, created];
+        return next.sort((a, b) => a.deadline.localeCompare(b.deadline));
+      });
+      toast({ title: "Meta criada!", description: `A meta "${created.name}" foi adicionada com sucesso.` });
+      setFormData({ name: '', targetAmount: '', currentAmount: '', deadline: '' });
+      setOpen(false);
+    } catch (err: any) {
+      toast({ title: "Erro ao criar", description: err.message ?? "Não foi possível criar a meta", variant: "destructive" });
+    }
   };
 
   const formatDate = (date: string) => {
@@ -120,16 +164,44 @@ const Goals = () => {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockGoals.map((goal) => {
-            const progress = (goal.currentAmount / goal.targetAmount) * 100;
+          {loading && (
+            <p className="text-sm text-muted-foreground">Carregando...</p>
+          )}
+          {!loading && goals.length === 0 && (
+            <Card>
+              <CardContent className="py-6">
+                <p className="text-sm text-muted-foreground">Nenhuma meta cadastrada ainda.</p>
+              </CardContent>
+            </Card>
+          )}
+          {!loading && goals.map((goal) => {
+            const progress = calculateGoalProgress(goal.current_amount, goal.target_amount);
             return (
               <Card key={goal.id} className="transition-all hover:shadow-lg">
                 <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-full bg-primary/10 p-2">
-                      <Target className="h-5 w-5 text-primary" />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-primary/10 p-2">
+                        <Target className="h-5 w-5 text-primary" />
+                      </div>
+                      <CardTitle className="text-lg">{goal.name}</CardTitle>
                     </div>
-                    <CardTitle className="text-lg">{goal.name}</CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={async () => {
+                        try {
+                          await deleteGoal(goal.id);
+                          setGoals((prev) => prev.filter((g) => g.id !== goal.id));
+                          toast({ title: "Meta excluída", description: `A meta "${goal.name}" foi removida.` });
+                        } catch (err: any) {
+                          toast({ title: "Erro ao excluir", description: err.message ?? "Não foi possível excluir a meta", variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -143,11 +215,11 @@ const Goals = () => {
                   <div className="space-y-1">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Atual</span>
-                      <span className="font-semibold">{formatCurrency(goal.currentAmount)}</span>
+                      <span className="font-semibold">{formatCurrency(goal.current_amount)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Meta</span>
-                      <span className="font-semibold">{formatCurrency(goal.targetAmount)}</span>
+                      <span className="font-semibold">{formatCurrency(goal.target_amount)}</span>
                     </div>
                     <div className="flex justify-between text-sm pt-2 border-t">
                       <span className="text-muted-foreground">Prazo</span>
