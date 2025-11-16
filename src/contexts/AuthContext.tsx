@@ -46,11 +46,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Escutar mudanças na autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        console.log('Auth state change:', event, session?.user?.id);
+        
         if (session?.user) {
           await loadUserProfile(session.user);
         } else {
           setUser(null);
+          // Se houve sign_out, redirecionar para auth
+          if (event === 'SIGNED_OUT') {
+            navigate('/auth', { replace: true });
+          }
         }
         setLoading(false);
       }
@@ -69,7 +75,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .eq("id", supabaseUser.id)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Erro ao carregar perfil:", error);
+        // Se não há perfil, usar dados do Supabase User
+        setUser({
+          id: supabaseUser.id,
+          name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'Usuário',
+          email: supabaseUser.email || '',
+        });
+        return;
+      }
 
       if (profile) {
         setUser({
@@ -80,6 +95,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     } catch (error) {
       console.error("Erro ao carregar perfil:", error);
+      // Fallback para dados do auth user
+      setUser({
+        id: supabaseUser.id,
+        name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'Usuário',
+        email: supabaseUser.email || '',
+      });
     }
   };
 
@@ -163,16 +184,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
+      setLoading(true);
       const { error } = await supabase.auth.signOut();
       
       if (error) throw error;
 
       setUser(null);
       toast.success("Logout realizado com sucesso");
-      navigate("/auth");
+      
+      // Aguarda um tick para garantir que o estado foi atualizado
+      setTimeout(() => {
+        navigate("/auth", { replace: true });
+        setLoading(false);
+      }, 100);
     } catch (error) {
       console.error("Erro no logout:", error);
       toast.error("Erro ao realizar logout");
+      setUser(null);
+      navigate("/auth", { replace: true });
+      setLoading(false);
     }
   };
 
