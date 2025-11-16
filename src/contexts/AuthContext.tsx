@@ -27,18 +27,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let mounted = true;
+
     // Verificar sessão ativa do Supabase
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Verificando sessão...');
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (session?.user) {
+        if (error) {
+          console.error("Erro ao verificar sessão:", error);
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+        
+        if (session?.user && mounted) {
+          console.log('Sessão encontrada, carregando perfil...');
           await loadUserProfile(session.user);
+        } else if (mounted) {
+          console.log('Sem sessão ativa');
+          setUser(null);
         }
       } catch (error) {
         console.error("Erro ao verificar sessão:", error);
+        if (mounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          console.log('Finalizando verificação de sessão');
+          setLoading(false);
+        }
       }
     };
 
@@ -49,35 +71,49 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       async (event, session) => {
         console.log('Auth state change:', event, session?.user?.id);
         
+        if (!mounted) return;
+
         if (session?.user) {
           await loadUserProfile(session.user);
+          setLoading(false);
         } else {
           setUser(null);
+          setLoading(false);
           // Se houve sign_out, redirecionar para auth
           if (event === 'SIGNED_OUT') {
             navigate('/auth', { replace: true });
           }
         }
-        setLoading(false);
       }
     );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const loadUserProfile = async (supabaseUser: SupabaseUser) => {
     try {
-      const { data: profile, error } = await supabase
+      console.log('Carregando perfil do usuário:', supabaseUser.id);
+      
+      // Timeout de segurança de 5 segundos
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout ao carregar perfil')), 5000)
+      );
+
+      const profilePromise = supabase
         .from("profiles")
         .select("*")
         .eq("id", supabaseUser.id)
-        .single();
+        .maybeSingle(); // Usa maybeSingle ao invés de single para evitar erro quando não encontrar
 
-      if (error) {
-        console.error("Erro ao carregar perfil:", error);
-        // Se não há perfil, usar dados do Supabase User
+      const result = await Promise.race([profilePromise, timeoutPromise]) as any;
+      const { data: profile, error } = result;
+
+      // Se a tabela não existe ou há erro de permissão, usa fallback
+      if (error && (error.code === 'PGRST116' || error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('permission'))) {
+        console.log('Tabela profiles não disponível, usando dados do auth');
         setUser({
           id: supabaseUser.id,
           name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'Usuário',
@@ -86,16 +122,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      if (profile) {
+      if (error || !profile) {
+        console.log('Perfil não encontrado ou erro, usando dados do auth:', error?.message);
         setUser({
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
+          id: supabaseUser.id,
+          name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'Usuário',
+          email: supabaseUser.email || '',
         });
+        return;
       }
-    } catch (error) {
+
+      console.log('Perfil carregado com sucesso');
+      setUser({
+        id: profile.id,
+        name: profile.name || supabaseUser.email?.split('@')[0] || 'Usuário',
+        email: profile.email || supabaseUser.email || '',
+      });
+    } catch (error: any) {
       console.error("Erro ao carregar perfil:", error);
-      // Fallback para dados do auth user
+      // Fallback para dados do auth user - SEMPRE define o usuário
       setUser({
         id: supabaseUser.id,
         name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'Usuário',
