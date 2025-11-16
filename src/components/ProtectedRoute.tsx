@@ -11,16 +11,18 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const [timeoutReached, setTimeoutReached] = useState(false);
 
   useEffect(() => {
-    // Timeout de segurança: se após 10 segundos ainda estiver loading, força redirect
+      console.log('[ProtectedRoute] Estado:', { isAuthenticated, loading });
+    
+      // Timeout de segurança: se após 10 segundos ainda estiver loading, força redirect
     const timeout = setTimeout(() => {
       if (loading) {
-        console.error('Timeout de autenticação atingido');
+          console.error('[ProtectedRoute] Timeout de autenticação atingido');
         setTimeoutReached(true);
       }
     }, 10000);
 
     return () => clearTimeout(timeout);
-  }, [loading]);
+    }, [loading, isAuthenticated]);
 
   // Se atingiu timeout e ainda está loading, redireciona para auth
   if (timeoutReached && loading) {

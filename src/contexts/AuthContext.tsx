@@ -33,11 +33,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Verificar sessão ativa do Supabase
     const checkSession = async () => {
       try {
-        console.log('Verificando sessão...');
+        console.log('[Auth] Verificando sessão...');
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error("Erro ao verificar sessão:", error);
+          console.error("[Auth] Erro ao verificar sessão:", error);
           if (mounted) {
             setUser(null);
             setLoading(false);
@@ -46,20 +46,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
         
         if (session?.user && mounted) {
-          console.log('Sessão encontrada, carregando perfil...');
+          console.log('[Auth] Sessão encontrada, carregando perfil...');
           await loadUserProfile(session.user);
         } else if (mounted) {
-          console.log('Sem sessão ativa');
+          console.log('[Auth] Sem sessão ativa');
           setUser(null);
         }
       } catch (error) {
-        console.error("Erro ao verificar sessão:", error);
+        console.error("[Auth] Erro ao verificar sessão:", error);
         if (mounted) {
           setUser(null);
         }
       } finally {
         if (mounted) {
-          console.log('Finalizando verificação de sessão');
+          console.log('[Auth] Finalizando verificação de sessão - loading=false');
           setLoading(false);
         }
       }
@@ -70,7 +70,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Escutar mudanças na autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state change:', event, session?.user?.id);
+        console.log('[Auth] State change:', event, session?.user?.id);
         
         if (!mounted) return;
 
@@ -80,15 +80,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setUser(null);
           setLoading(false);
-          // Se houve sign_out, redirecionar para auth
-          if (event === 'SIGNED_OUT') {
-            navigate('/auth', { replace: true });
-          }
+          // Não navega automaticamente - deixa o ProtectedRoute decidir
+          // Isso evita redirects indesejados no F5
         }
       }
     );
 
     return () => {
+      console.log('[Auth] Cleanup - desmontando');
       mounted = false;
       subscription.unsubscribe();
     };
