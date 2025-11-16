@@ -5,25 +5,121 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { User, LogOut } from "lucide-react";
+import { User, LogOut, Loader2 } from "lucide-react";
+import { getProfile, updateProfile, createProfile } from "@/lib/profiles";
 
 const Profile = () => {
   const { toast } = useToast();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshProfile } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || "",
     email: user?.email || "",
     currency: "BRL",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user?.id) return;
+      
+      try {
+        setLoading(true);
+        const profile = await getProfile(user.id);
+        
+        if (profile) {
+          setFormData({
+            name: profile.name,
+            email: profile.email,
+            currency: "BRL",
+          });
+        }
+      } catch (err: any) {
+        console.error("Erro ao carregar perfil:", err);
+        toast({
+          title: "Aviso",
+          description: "Usando dados da sessão",
+          variant: "default",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [user?.id]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "Perfil atualizado!",
-      description: "Suas informações foram salvas com sucesso.",
-    });
+    
+    if (!user?.id) {
+      toast({
+        title: "Erro",
+        description: "Usuário não autenticado",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.name.trim()) {
+      toast({
+        title: "Nome obrigatório",
+        description: "Por favor, informe seu nome",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      toast({
+        title: "Email inválido",
+        description: "Por favor, informe um email válido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      // Tenta atualizar, se não existir, cria
+      try {
+        await updateProfile(user.id, {
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+        });
+      } catch (updateError: any) {
+        // Se o perfil não existe, cria um novo
+        if (updateError.code === 'PGRST116') {
+          await createProfile({
+            id: user.id,
+            name: formData.name.trim(),
+            email: formData.email.trim(),
+          });
+        } else {
+          throw updateError;
+        }
+      }
+
+      toast({
+        title: "Perfil atualizado!",
+        description: "Suas informações foram salvas com sucesso.",
+      });
+      
+      // Recarregar perfil no contexto
+      await refreshProfile();
+    } catch (err: any) {
+      console.error("Erro ao salvar perfil:", err);
+      toast({
+        title: "Erro ao salvar",
+        description: err.message || "Não foi possível atualizar o perfil",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -47,46 +143,65 @@ const Profile = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome Completo</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Nome Completo</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    disabled={saving}
+                    required
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">E-mail</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    disabled={saving}
+                    required
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="currency">Moeda</Label>
-                <Select value={formData.currency} onValueChange={(v) => setFormData({ ...formData, currency: v })}>
-                  <SelectTrigger id="currency">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BRL">Real (BRL)</SelectItem>
-                    <SelectItem value="USD">Dólar (USD)</SelectItem>
-                    <SelectItem value="EUR">Euro (EUR)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="currency">Moeda</Label>
+                  <Select 
+                    value={formData.currency} 
+                    onValueChange={(v) => setFormData({ ...formData, currency: v })}
+                    disabled={saving}
+                  >
+                    <SelectTrigger id="currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BRL">Real (BRL)</SelectItem>
+                      <SelectItem value="USD">Dólar (USD)</SelectItem>
+                      <SelectItem value="EUR">Euro (EUR)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <Button type="submit" className="w-full" size="lg">
-                Salvar Alterações
-              </Button>
-            </form>
+                <Button type="submit" className="w-full" size="lg" disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    'Salvar Alterações'
+                  )}
+                </Button>
+              </form>
+            )}
           </CardContent>
         </Card>
 
