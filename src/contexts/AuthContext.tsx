@@ -15,6 +15,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -251,6 +252,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const refreshProfile = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadUserProfile(session.user);
+      }
+    } catch (error) {
+      console.error("Erro ao recarregar perfil:", error);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -258,6 +270,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         signup,
         logout,
+        refreshProfile,
         isAuthenticated: !!user,
         loading,
       }}
