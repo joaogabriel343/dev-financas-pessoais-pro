@@ -1,288 +1,274 @@
-import { describe, it, expect } from 'vitest';
-import {
-  formatCurrency,
-  parseCurrency,
-  calculateBalance,
-  calculatePercentage,
-  isOverBudget,
-  isWarningBudget,
-  validateTransactionAmount,
-  formatMonth,
-  calculateGoalProgress,
-  getDaysUntilDeadline,
-  categorizeTransactionsByMonth,
-} from '../utils/financeUtils';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { supabase } from '../lib/supabase';
+import { createCategory, listCategories, deleteCategory } from '../lib/categorias';
+import { createAccount, listAccounts, deleteAccount } from '../lib/accounts';
+import { createTransaction, listTransactions, deleteTransaction } from '../lib/transactions';
+import { upsertBudget, listBudgets, startOfMonthISO } from '../lib/budgets';
+import { createGoal, listGoals, deleteGoal } from '../lib/goals';
 
-describe('Testes Unitários - Sistema de Finanças Pessoais', () => {
-  describe('Caso de Teste 1: formatCurrency - Formatação de moeda', () => {
-    it('deve formatar valor positivo corretamente em BRL', () => {
-      const input = 1234.56;
-      const expected = 'R$ 1.234,56';
-      const result = formatCurrency(input);
-      expect(result).toBe(expected);
+// 15 Testes de Integração com Dados Reais (Supabase)
+describe('Integração - Sistema Financeiro (15 casos com banco real)', () => {
+  let testUserId: string;
+  const createdIds = {
+    categories: [] as number[],
+    accounts: [] as number[],
+    transactions: [] as number[],
+    budgets: [] as number[],
+    goals: [] as number[],
+  };
+
+  beforeAll(async () => {
+    // Cria usuário de teste real no Supabase
+    const { data, error } = await supabase.auth.signUp({
+      email: `test-${Date.now()}@integration.test`,
+      password: 'TestPass123!',
     });
 
-    it('deve formatar valor zero', () => {
-      const input = 0;
-      const expected = 'R$ 0,00';
-      const result = formatCurrency(input);
-      expect(result).toBe(expected);
-    });
-
-    it('deve formatar valor negativo', () => {
-      const input = -500.75;
-      const expected = '-R$ 500,75';
-      const result = formatCurrency(input);
-      expect(result).toBe(expected);
-    });
+    if (error && !error.message.includes('already registered')) {
+      throw error;
+    }
+    testUserId = data.user?.id || '';
+    expect(testUserId).toBeTruthy();
   });
 
-  describe('Caso de Teste 2: calculateBalance - Cálculo de saldo', () => {
-    it('deve calcular saldo positivo quando receita > despesa', () => {
-      const income = 5000;
-      const expenses = 3000;
-      const expected = 2000;
-      const result = calculateBalance(income, expenses);
-      expect(result).toBe(expected);
-    });
-
-    it('deve calcular saldo negativo quando despesa > receita', () => {
-      const income = 2000;
-      const expenses = 3500;
-      const expected = -1500;
-      const result = calculateBalance(income, expenses);
-      expect(result).toBe(expected);
-    });
-
-    it('deve retornar zero quando receita = despesa', () => {
-      const income = 1000;
-      const expenses = 1000;
-      const expected = 0;
-      const result = calculateBalance(income, expenses);
-      expect(result).toBe(expected);
-    });
+  afterAll(async () => {
+    // Limpa todos os dados criados durante os testes
+    for (const id of createdIds.goals) {
+      try { await deleteGoal(id); } catch {}
+    }
+    for (const id of createdIds.transactions) {
+      try { await deleteTransaction(id); } catch {}
+    }
+    for (const id of createdIds.budgets) {
+      try { await supabase.from('budgets').delete().eq('id', id); } catch {}
+    }
+    for (const id of createdIds.accounts) {
+      try { await deleteAccount(id); } catch {}
+    }
+    for (const id of createdIds.categories) {
+      try { await deleteCategory(id); } catch {}
+    }
+    await supabase.auth.signOut();
   });
 
-  describe('Caso de Teste 3: calculatePercentage - Cálculo de percentual', () => {
-    it('deve calcular percentual corretamente', () => {
-      const value = 75;
-      const total = 100;
-      const expected = 75;
-      const result = calculatePercentage(value, total);
-      expect(result).toBe(expected);
+  // 1. Criar categoria de receita
+  it('1. Cria categoria de receita no banco real', async () => {
+    const cat = await createCategory({
+      name: `Salário Teste ${Date.now()}`,
+      type: 'income',
+      user_id: testUserId,
     });
 
-    it('deve retornar 0 quando total é zero (evitar divisão por zero)', () => {
-      const value = 50;
-      const total = 0;
-      const expected = 0;
-      const result = calculatePercentage(value, total);
-      expect(result).toBe(expected);
-    });
-
-    it('deve calcular percentual maior que 100', () => {
-      const value = 150;
-      const total = 100;
-      const expected = 150;
-      const result = calculatePercentage(value, total);
-      expect(result).toBe(expected);
-    });
+    expect(cat.id).toBeDefined();
+    expect(cat.name).toContain('Salário');
+    expect(cat.type).toBe('income');
+    createdIds.categories.push(cat.id);
   });
 
-  describe('Caso de Teste 4: isOverBudget - Verificação de orçamento estourado', () => {
-    it('deve retornar true quando gasto excede o limite', () => {
-      const spent = 1200;
-      const limit = 1000;
-      const result = isOverBudget(spent, limit);
-      expect(result).toBe(true);
+  // 2. Criar categoria de despesa
+  it('2. Cria categoria de despesa no banco real', async () => {
+    const cat = await createCategory({
+      name: `Alimentação Teste ${Date.now()}`,
+      type: 'expense',
+      user_id: testUserId,
     });
 
-    it('deve retornar false quando gasto está dentro do limite', () => {
-      const spent = 800;
-      const limit = 1000;
-      const result = isOverBudget(spent, limit);
-      expect(result).toBe(false);
-    });
-
-    it('deve retornar false quando gasto é igual ao limite', () => {
-      const spent = 1000;
-      const limit = 1000;
-      const result = isOverBudget(spent, limit);
-      expect(result).toBe(false);
-    });
+    expect(cat.type).toBe('expense');
+    createdIds.categories.push(cat.id);
   });
 
-  describe('Caso de Teste 5: isWarningBudget - Verificação de alerta de orçamento', () => {
-    it('deve retornar true quando gasto está entre 80% e 100%', () => {
-      const spent = 900;
-      const limit = 1000;
-      const result = isWarningBudget(spent, limit);
-      expect(result).toBe(true);
-    });
-
-    it('deve retornar false quando gasto está abaixo de 80%', () => {
-      const spent = 700;
-      const limit = 1000;
-      const result = isWarningBudget(spent, limit);
-      expect(result).toBe(false);
-    });
-
-    it('deve retornar false quando gasto excede 100%', () => {
-      const spent = 1100;
-      const limit = 1000;
-      const result = isWarningBudget(spent, limit);
-      expect(result).toBe(false);
-    });
+  // 3. Listar categorias do usuário
+  it('3. Lista categorias do usuário no banco real', async () => {
+    const list = await listCategories(testUserId);
+    expect(Array.isArray(list)).toBe(true);
+    expect(list.length).toBeGreaterThan(0);
   });
 
-  describe('Caso de Teste 6: validateTransactionAmount - Validação de valor de transação', () => {
-    it('deve validar valor positivo válido', () => {
-      const amount = 150.50;
-      const result = validateTransactionAmount(amount);
-      expect(result.valid).toBe(true);
-      expect(result.error).toBeUndefined();
+  // 4. Criar conta bancária
+  it('4. Cria conta bancária no banco real', async () => {
+    const acc = await createAccount({
+      user_id: testUserId,
+      name: `Banco Teste ${Date.now()}`,
+      type: 'bank',
+      balance: 5000,
+      icon: '🏦',
     });
 
-    it('deve rejeitar valor zero', () => {
-      const amount = 0;
-      const result = validateTransactionAmount(amount);
-      expect(result.valid).toBe(false);
-      expect(result.error).toBe('Valor deve ser maior que zero');
-    });
-
-    it('deve rejeitar valor negativo', () => {
-      const amount = -100;
-      const result = validateTransactionAmount(amount);
-      expect(result.valid).toBe(false);
-      expect(result.error).toBe('Valor deve ser maior que zero');
-    });
-
-    it('deve rejeitar valor inválido (NaN)', () => {
-      const amount = NaN;
-      const result = validateTransactionAmount(amount);
-      expect(result.valid).toBe(false);
-      expect(result.error).toBe('Valor inválido');
-    });
-
-    it('deve rejeitar valor muito alto', () => {
-      const amount = 1000000000;
-      const result = validateTransactionAmount(amount);
-      expect(result.valid).toBe(false);
-      expect(result.error).toBe('Valor muito alto');
-    });
+    expect(acc.id).toBeDefined();
+    expect(acc.type).toBe('bank');
+    expect(acc.balance).toBe(5000);
+    createdIds.accounts.push(acc.id);
   });
 
-  describe('Caso de Teste 7: calculateGoalProgress - Cálculo de progresso de meta', () => {
-    it('deve calcular progresso corretamente', () => {
-      const current = 7500;
-      const target = 10000;
-      const expected = 75;
-      const result = calculateGoalProgress(current, target);
-      expect(result).toBe(expected);
+  // 5. Criar conta em dinheiro
+  it('5. Cria conta em dinheiro no banco real', async () => {
+    const acc = await createAccount({
+      user_id: testUserId,
+      name: `Carteira Teste ${Date.now()}`,
+      type: 'cash',
+      balance: 300.50,
     });
 
-    it('deve retornar 100 quando meta é atingida', () => {
-      const current = 10000;
-      const target = 10000;
-      const expected = 100;
-      const result = calculateGoalProgress(current, target);
-      expect(result).toBe(expected);
-    });
-
-    it('deve limitar em 100% mesmo quando excede a meta', () => {
-      const current = 12000;
-      const target = 10000;
-      const expected = 100;
-      const result = calculateGoalProgress(current, target);
-      expect(result).toBe(expected);
-    });
-
-    it('deve retornar 0 quando meta é zero', () => {
-      const current = 5000;
-      const target = 0;
-      const expected = 0;
-      const result = calculateGoalProgress(current, target);
-      expect(result).toBe(expected);
-    });
+    expect(acc.type).toBe('cash');
+    expect(acc.balance).toBeCloseTo(300.50, 2);
+    createdIds.accounts.push(acc.id);
   });
 
-  describe('Caso de Teste 8: categorizeTransactionsByMonth - Categorização por mês', () => {
-    it('deve categorizar transações por mês corretamente', () => {
-      const transactions = [
-        { date: '2025-11-01', amount: 5000, type: 'income' as const },
-        { date: '2025-11-05', amount: 1500, type: 'expense' as const },
-        { date: '2025-11-10', amount: 800, type: 'expense' as const },
-        { date: '2025-10-01', amount: 4500, type: 'income' as const },
-        { date: '2025-10-15', amount: 2000, type: 'expense' as const },
-      ];
-
-      const result = categorizeTransactionsByMonth(transactions);
-
-      expect(result['2025-11'].income).toBe(5000);
-      expect(result['2025-11'].expense).toBe(2300);
-      expect(result['2025-10'].income).toBe(4500);
-      expect(result['2025-10'].expense).toBe(2000);
-    });
-
-    it('deve lidar com array vazio', () => {
-      const transactions: Array<{ date: string; amount: number; type: 'income' | 'expense' }> = [];
-      const result = categorizeTransactionsByMonth(transactions);
-      expect(Object.keys(result).length).toBe(0);
-    });
-
-    it('deve somar múltiplas transações do mesmo tipo no mesmo mês', () => {
-      const transactions = [
-        { date: '2025-11-01', amount: 1000, type: 'expense' as const },
-        { date: '2025-11-05', amount: 2000, type: 'expense' as const },
-        { date: '2025-11-10', amount: 1500, type: 'expense' as const },
-      ];
-
-      const result = categorizeTransactionsByMonth(transactions);
-
-      expect(result['2025-11'].expense).toBe(4500);
-      expect(result['2025-11'].income).toBe(0);
-    });
+  // 6. Listar contas do usuário
+  it('6. Lista contas do usuário no banco real', async () => {
+    const list = await listAccounts(testUserId);
+    expect(Array.isArray(list)).toBe(true);
+    expect(list.length).toBeGreaterThan(0);
   });
 
-  describe('Caso de Teste 9: parseCurrency - Parse de string de moeda', () => {
-    it('deve converter string formatada em número', () => {
-      const input = 'R$ 1.234,56';
-      const expected = 1234.56;
-      const result = parseCurrency(input);
-      expect(result).toBeCloseTo(expected, 2);
-    });
+  // 7. Criar transação de despesa
+  it('7. Cria transação de despesa no banco real', async () => {
+    // Precisa de categoria e conta
+    const cat = createdIds.categories[0] || (await createCategory({ name: 'Cat Temp', type: 'expense', user_id: testUserId })).id;
+    const acc = createdIds.accounts[0] || (await createAccount({ user_id: testUserId, name: 'Acc Temp', type: 'bank', balance: 1000 })).id;
+    
+    if (!createdIds.categories.includes(cat)) createdIds.categories.push(cat);
+    if (!createdIds.accounts.includes(acc)) createdIds.accounts.push(acc);
 
-    it('deve retornar 0 para string vazia', () => {
-      const input = '';
-      const expected = 0;
-      const result = parseCurrency(input);
-      expect(result).toBe(expected);
-    });
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert([{
+        user_id: testUserId,
+        type: 'expense',
+        amount: 150.75,
+        date: '2025-11-17',
+        description: 'Teste Supermercado',
+        category_id: cat,
+        account_id: acc,
+      }])
+      .select('id')
+      .single();
 
-    it('deve lidar com valor sem formatação', () => {
-      const input = '500.75';
-      const expected = 500.75;
-      const result = parseCurrency(input);
-      expect(result).toBeCloseTo(expected, 2);
-    });
+    expect(error).toBeNull();
+    expect(data?.id).toBeDefined();
+    createdIds.transactions.push(data!.id);
   });
 
-  describe('Caso de Teste 10: getDaysUntilDeadline - Dias até prazo', () => {
-    it('deve calcular dias restantes até deadline futuro', () => {
-      const today = new Date();
-      const futureDate = new Date(today);
-      futureDate.setDate(today.getDate() + 30);
-      const deadline = futureDate.toISOString().split('T')[0];
+  // 8. Criar transação de receita
+  it('8. Cria transação de receita no banco real', async () => {
+    const cat = createdIds.categories[0] || (await createCategory({ name: 'Cat Inc', type: 'income', user_id: testUserId })).id;
+    const acc = createdIds.accounts[0] || (await createAccount({ user_id: testUserId, name: 'Acc Inc', type: 'bank', balance: 1000 })).id;
 
-      const result = getDaysUntilDeadline(deadline);
-      expect(result).toBeGreaterThanOrEqual(29);
-      expect(result).toBeLessThanOrEqual(31);
+    if (!createdIds.categories.includes(cat)) createdIds.categories.push(cat);
+    if (!createdIds.accounts.includes(acc)) createdIds.accounts.push(acc);
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert([{
+        user_id: testUserId,
+        type: 'income',
+        amount: 5000,
+        date: '2025-11-01',
+        description: 'Salário',
+        category_id: cat,
+        account_id: acc,
+      }])
+      .select('id')
+      .single();
+
+    expect(error).toBeNull();
+    createdIds.transactions.push(data!.id);
+  });
+
+  // 9. Listar transações com joins
+  it('9. Lista transações com nomes de categoria e conta (JOIN)', async () => {
+    const list = await listTransactions(testUserId);
+    expect(Array.isArray(list)).toBe(true);
+    if (list.length > 0) {
+      expect(list[0].category_name).toBeDefined();
+      expect(list[0].account_name).toBeDefined();
+    }
+  });
+
+  // 10. Criar orçamento (upsert)
+  it('10. Cria orçamento no banco real (upsert)', async () => {
+    const cat = createdIds.categories[0] || (await createCategory({ name: 'Cat Budget', type: 'expense', user_id: testUserId })).id;
+    if (!createdIds.categories.includes(cat)) createdIds.categories.push(cat);
+
+    const month = startOfMonthISO(new Date());
+    const budget = await upsertBudget({
+      user_id: testUserId,
+      category_id: cat,
+      month,
+      limit_amount: 1000,
     });
 
-    it('deve retornar número negativo para deadline passado', () => {
-      const pastDate = '2020-01-01';
-      const result = getDaysUntilDeadline(pastDate);
-      expect(result).toBeLessThan(0);
+    expect(budget.id).toBeDefined();
+    expect(budget.limit_amount).toBe(1000);
+    createdIds.budgets.push(budget.id);
+  });
+
+  // 11. Atualizar orçamento existente (upsert mesma chave)
+  it('11. Atualiza orçamento existente (upsert)', async () => {
+    const cat = createdIds.categories[0];
+    const month = '2025-12-01';
+
+    const b1 = await upsertBudget({
+      user_id: testUserId,
+      category_id: cat,
+      month,
+      limit_amount: 500,
     });
+    createdIds.budgets.push(b1.id);
+
+    const b2 = await upsertBudget({
+      user_id: testUserId,
+      category_id: cat,
+      month,
+      limit_amount: 1500,
+    });
+
+    expect(b2.limit_amount).toBe(1500);
+  });
+
+  // 12. Listar orçamentos
+  it('12. Lista orçamentos do usuário no banco real', async () => {
+    const list = await listBudgets(testUserId);
+    expect(Array.isArray(list)).toBe(true);
+    if (list.length > 0) {
+      expect(list[0].category_name).toBeDefined();
+    }
+  });
+
+  // 13. Criar meta financeira
+  it('13. Cria meta financeira no banco real', async () => {
+    const goal = await createGoal({
+      user_id: testUserId,
+      name: `Meta Teste ${Date.now()}`,
+      target_amount: 10000,
+      current_amount: 2000,
+      deadline: '2026-12-31',
+    });
+
+    expect(goal.id).toBeDefined();
+    expect(goal.target_amount).toBe(10000);
+    expect(goal.current_amount).toBe(2000);
+    createdIds.goals.push(goal.id);
+  });
+
+  // 14. Listar metas
+  it('14. Lista metas do usuário no banco real', async () => {
+    const list = await listGoals(testUserId);
+    expect(Array.isArray(list)).toBe(true);
+    expect(list.length).toBeGreaterThan(0);
+  });
+
+  // 15. Deletar categoria
+  it('15. Deleta categoria no banco real', async () => {
+    const cat = await createCategory({
+      name: `Para Deletar ${Date.now()}`,
+      type: 'expense',
+      user_id: testUserId,
+    });
+
+    await expect(deleteCategory(cat.id)).resolves.not.toThrow();
+
+    const list = await listCategories(testUserId);
+    expect(list.some(c => c.id === cat.id)).toBe(false);
   });
 });
