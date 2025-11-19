@@ -6,7 +6,6 @@ import { createTransaction, listTransactions, deleteTransaction } from '../lib/t
 import { upsertBudget, listBudgets, startOfMonthISO } from '../lib/budgets';
 import { createGoal, listGoals, deleteGoal } from '../lib/goals';
 
-// 12 Testes de Integração com Dados Reais (Supabase) - 3 por pessoa
 describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
   let testUserId: string;
   const createdIds = {
@@ -18,7 +17,7 @@ describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
   };
 
   beforeAll(async () => {
-    // Cria usuário de teste real no Supabase
+    // Criar usuario de teste real no Supabase
     const { data, error } = await supabase.auth.signUp({
       email: `test-${Date.now()}@integration.test`,
       password: 'TestPass123!',
@@ -51,7 +50,6 @@ describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
     await supabase.auth.signOut();
   });
 
-  // PESSOA 1: Categorias (3 testes)
   
   // 1. Criar categoria de receita
   it('1. Cria categoria de receita no banco real', async () => {
@@ -86,7 +84,7 @@ describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
     expect(list.length).toBeGreaterThan(0);
   });
 
-  // PESSOA 2: Contas (3 testes)
+
   
   // 4. Criar conta bancária
   it('4. Cria conta bancária no banco real', async () => {
@@ -126,7 +124,6 @@ describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
     expect(list.some(a => a.id === acc.id)).toBe(false);
   });
 
-  // PESSOA 3: Transações (3 testes)
   
   // 7. Criar transação de despesa
   it('7. Cria transação de despesa no banco real', async () => {
@@ -192,7 +189,6 @@ describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
     }
   });
 
-  // PESSOA 4: Orçamentos e Metas (3 testes)
   
   // 10. Criar orçamento (upsert)
   it('10. Cria orçamento no banco real (upsert)', async () => {
