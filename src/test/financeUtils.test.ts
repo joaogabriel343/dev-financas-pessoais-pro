@@ -222,7 +222,7 @@ describe('Integração - Sistema Financeiro (12 casos com banco real)', () => {
     const goal = await createGoal({
       user_id: testUserId,
       name: `Meta Teste ${Date.now()}`,
-      target_amount: 10000,
+      target_amount: 100,
       current_amount: 2000,
       deadline: '2026-12-31',
     });
